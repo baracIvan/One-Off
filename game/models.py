@@ -1,6 +1,7 @@
 import uuid
 import random
 import string
+from game.questions import QUESTION_PAIRS
 
 class Player:
     def __init__(self, nickname, sid):
@@ -62,6 +63,40 @@ class GameManager:
             code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
             if code not in self.rooms:
                 return code
+
+    def start_new_round(self, room_code):
+        room = self.get_room(room_code)
+        if not room:
+            return None
+
+        if len(room.players) < 3:
+            print(f"[Game] Not enough players to start a round in room {room_code}")
+            return None
+
+        # Choose a question pair
+        normal_q, impostor_q = random.choice(QUESTION_PAIRS)
+
+        # Pick impostor
+        impostor = random.choice(room.players)
+
+        # Mark impostor and reset state
+        for p in room.players:
+            p.is_impostor = (p == impostor)
+            p.answer = None
+            p.vote = None
+
+        room.current_round += 1
+        room.current_phase = 'answer'
+
+        # Store this round's data
+        room.round_data = RoundData(
+            normal_question=normal_q,
+            impostor_question=impostor_q,
+            impostor_id=impostor.id
+        )
+
+        print(f"[Game] Started round {room.current_round} in room {room_code} (Impostor: {impostor.nickname})")
+        return room.round_data
 
 game_manager = GameManager()
 

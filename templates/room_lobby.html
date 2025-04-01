@@ -8,30 +8,65 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="room-header">
-        <div class="room-info">
-            <p><strong>Room Code:</strong> {{ room.code }}</p>
-            <p><strong>Answer:</strong> {{ room.timers['answer'] }}s</p>
-            <p><strong>Discussion:</strong> {{ room.timers['discussion'] }}s</p>
-            <p><strong>Voting:</strong> {{ room.timers['voting'] }}s</p>
-            <p><strong>Rounds:</strong> {{ room.max_rounds }}</p>
+    <div id="lobby-ui">
+        <div class="room-header">
+            <div class="room-info">
+                <p><strong>Room Code:</strong> {{ room.code }}</p>
+                <p><strong>Answer:</strong> {{ room.timers['answer'] }}s</p>
+                <p><strong>Discussion:</strong> {{ room.timers['discussion'] }}s</p>
+                <p><strong>Voting:</strong> {{ room.timers['voting'] }}s</p>
+                <p><strong>Rounds:</strong> {{ room.max_rounds }}</p>
+            </div>
         </div>
+
+        <h1>Players: <span id="player-count"></span></h1>
+        <ul class="player-list" id="player-list">
+        </ul>
+
+
+        <form method="POST" action="/leave_room">
+            <input type="hidden" name="room_code" value="{{ room.code }}">
+            <input type="hidden" name="nickname" value="{{ nickname }}">
+            <button class="button leave-button">Leave Room</button>
+        </form>
+
+        <form action="/start_game/{{ room.code }}" method="POST" id="start-game-form" style="display: none;">
+            <button type="button" class="button" id="start-game-btn">Start Game</button>
+        </form>
     </div>
 
-    <h1>Players: <span id="player-count"></span></h1>
-    <ul class="player-list" id="player-list">
-    </ul>
+    <!-- Answer Phase UI -->
+    <div id="answer-phase" style="display: none;">
+        <h2 id="question-text"></h2>
+        <p>Time remaining: <span id="answer-timer">30</span> seconds</p>
+
+        <form id="answer-form">
+            <input type="text" id="answer-input" required placeholder="Type your answer..." />
+            <button type="submit" class="button">Submit</button>
+        </form>
+        <p id="answer-submitted-msg" style="display: none;">✅ Answer submitted. Waiting for others...</p>
+    </div>
+
+    <!-- Discussion Phase UI -->
+    <div id="discussion-phase" style="display: none;">
+        <h2 id="discussion-phase-label">Discussion Phase</h2>
+        <h3 id="discussion-question"></h3>
+
+        <ul id="discussion-answers" class="discussion-list"></ul>
+
+        <div id="voting-controls" style="display: none; margin-top: 20px;">
+            <h4>Vote for the impostor:</h4>
+            <ul id="vote-options" class="vote-card-list"></ul>
+
+            <button class="button" id="submit-vote-btn" style="margin-top: 20px;">Vote</button>
+        </div>
 
 
-    <form method="POST" action="/leave_room">
-        <input type="hidden" name="room_code" value="{{ room.code }}">
-        <input type="hidden" name="nickname" value="{{ nickname }}">
-        <button class="button leave-button">Leave Room</button>
-    </form>
+        <p>Time remaining: <span id="discussion-timer">60</span> seconds</p>
 
-    <form action="/start_game/{{ room.code }}" method="POST" id="start-game-form" style="display: none;">
-        <button class="button">Start Game</button>
-    </form>
+        <button id="start-vote-btn" class="button" style="display: none;">Start Vote</button>
+    </div>
+
 
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -83,6 +118,208 @@
                 console.log('[UI] Not host — hiding Start Game button');
                 startForm.style.display = 'none';
             }
+        });
+
+        let answerTimer = null;
+
+        socket.on('receive_question', (data) => {
+            document.getElementById('lobby-ui').style.display = 'none';  // 👈 hide lobby
+            document.getElementById('answer-phase').style.display = 'block';  // 👈 show question
+
+            const phaseDiv = document.getElementById('answer-phase');
+            const questionText = document.getElementById('question-text');
+            const timerDisplay = document.getElementById('answer-timer');
+            const form = document.getElementById('answer-form');
+            const input = document.getElementById('answer-input');
+
+            // Show the question
+            questionText.textContent = data.question;
+            timerDisplay.textContent = data.duration;
+            phaseDiv.style.display = 'block';
+            input.value = '';
+            input.disabled = false;
+
+            // Start the countdown
+            let timeLeft = data.duration;
+            clearInterval(answerTimer);
+            answerTimer = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(answerTimer);
+                    input.disabled = true;
+                }
+            }, 1000);
+        });
+
+        document.getElementById('start-game-btn').addEventListener('click', () => {
+            socket.emit('start_round', { room_code: roomCode });
+        });
+
+
+        // Answer submission handler
+        document.getElementById('answer-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const input = document.getElementById('answer-input');
+            const answer = input.value;
+
+            socket.emit('submit_answer', {
+                room_code: roomCode,
+                nickname: nickname,
+                answer: answer
+            });
+
+            input.disabled = true;
+            document.getElementById('answer-submitted-msg').style.display = 'block';
+        })
+
+        let discussionTimer = null;
+
+        socket.on('all_answers_received', data => {
+            const questionText = document.getElementById('discussion-question');
+            const answerList = document.getElementById('discussion-answers');
+            const timerDisplay = document.getElementById('discussion-timer');
+            const voteBtn = document.getElementById('start-vote-btn');  // this is the host's trigger for voting phase
+
+            // Hide other screens
+            document.getElementById('answer-phase').style.display = 'none';
+            document.getElementById('discussion-phase').style.display = 'block';
+
+            // Set discussion phase label
+            document.getElementById('discussion-phase-label').textContent = 'Discussion Phase';
+
+            // Fill content
+            questionText.textContent = data.question;
+            answerList.innerHTML = '';
+            data.answers.forEach(entry => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>${entry.nickname}: <strong>${entry.answer}</strong></span>
+                `;
+                answerList.appendChild(li);
+            });
+
+            // Timer setup for discussion only
+            let timeLeft = data.duration;
+            timerDisplay.textContent = timeLeft;
+            clearInterval(discussionTimer);
+            discussionTimer = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(discussionTimer);
+                    voteBtn.style.display = 'none';
+                    // Optionally, auto-start voting after time ends:
+                    if (mySocketId && data.host_sid === mySocketId) {
+                        document.getElementById('discussion-phase-label').textContent = 'Voting Phase';
+                        socket.emit('start_voting', { room_code: roomCode });
+                    }
+                }
+            }, 1000);
+
+            // Show Start Vote button for host
+            if (mySocketId && data.host_sid === mySocketId) {
+                voteBtn.style.display = 'block';
+                voteBtn.onclick = () => {
+                    document.getElementById('discussion-phase-label').textContent = 'Voting Phase';
+                    voteBtn.style.display = 'none';
+                    socket.emit('start_voting', { room_code: roomCode });
+                };
+            } else {
+                voteBtn.style.display = 'none';
+            }
+
+            function startVotingPhase(data) {
+                document.getElementById('discussion-answers').style.display = 'none';
+                document.getElementById('discussion-phase-label').textContent = 'Voting Phase';
+                document.getElementById('voting-controls').style.display = 'block';
+
+                const voteList = document.getElementById('vote-options');
+                voteList.innerHTML = '';
+
+                const allOptions = [...data.answers.map(p => ({
+                    label: `${p.nickname}: ${p.answer}`,
+                    value: p.nickname
+                })), {
+                    label: "No Impostor",
+                    value: "none"
+                }];
+
+                allOptions.forEach(option => {
+                    const li = document.createElement('li');
+                    li.classList.add('vote-card');
+                    li.dataset.value = option.value;
+                    li.textContent = option.label;
+
+                    li.addEventListener('click', () => {
+                        document.querySelectorAll('.vote-card').forEach(card => card.classList.remove('selected'));
+                        li.classList.add('selected');
+                    });
+
+                    voteList.appendChild(li);
+                });
+
+                const timerDisplay = document.getElementById('discussion-timer');
+                let timeLeft = data.duration || 30;
+                timerDisplay.textContent = timeLeft;
+
+                clearInterval(discussionTimer);
+                discussionTimer = setInterval(() => {
+                    timeLeft--;
+                    timerDisplay.textContent = timeLeft;
+                    if (timeLeft <= 0) {
+                        clearInterval(discussionTimer);
+                        autoSubmitVote();
+                    }
+                }, 1000);
+            }
+
+
+            socket.on('voting_phase_started', data => {
+                startVotingPhase(data);
+            });
+
+
+            document.getElementById('submit-vote-btn').addEventListener('click', () => {
+                submitVote();
+            });
+
+            function submitVote() {
+                const selected = document.querySelector('.vote-card.selected');
+                if (!selected) return;
+
+                const voteValue = selected.dataset.value;
+
+                socket.emit('submit_vote', {
+                    room_code: roomCode,
+                    nickname: nickname,
+                    vote: voteValue
+                });
+
+                document.getElementById('submit-vote-btn').disabled = true;
+                console.log(`[Vote] Submitted: ${voteValue}`);
+            }
+
+
+            function autoSubmitVote() {
+                const selected = document.querySelector('.vote-card.selected');
+
+                if (!selected) {
+                    // Default to No Impostor
+                    const defaultCard = [...document.querySelectorAll('.vote-card')]
+                        .find(card => card.dataset.value === 'none');
+                    if (defaultCard) defaultCard.classList.add('selected');
+                }
+
+                submitVote();
+            }
+
+        });
+
+
+        document.getElementById('start-vote-btn').addEventListener('click', () => {
+            socket.emit('start_voting', { room_code: roomCode });
         });
 
 

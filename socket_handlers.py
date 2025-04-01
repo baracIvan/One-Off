@@ -53,6 +53,71 @@ def handle_disconnect():
     if code_to_update:
         broadcast_player_list(code_to_update)
 
+@socketio.on('start_round')
+def handle_start_round(data):
+    room_code = data['room_code']
+    round_data = game_manager.start_new_round(room_code)
+    room = game_manager.get_room(room_code)
+
+    if not round_data or not room:
+        return
+
+    # Send private question to each player
+    for player in room.players:
+        question = round_data.impostor_question if player.is_impostor else round_data.normal_question
+
+        socketio.emit('receive_question', {
+            'question': question,
+            'round': room.current_round,
+            'duration': room.timers['answer']
+        }, to=player.sid)
+
+    print(f"[SocketIO] Round {room.current_round} started in room {room_code}.")
+
+@socketio.on('submit_answer')
+def handle_submit_answer(data):
+    room_code = data['room_code']
+    nickname = data['nickname']
+    answer = data['answer']
+
+    room = game_manager.get_room(room_code)
+    if not room or not room.round_data:
+        return
+
+    for player in room.players:
+        if player.nickname == nickname:
+            player.answer = answer
+            break
+
+    if all(p.answer for p in room.players):
+        socketio.emit('all_answers_received', {
+            'question': room.round_data.normal_question,
+            'answers': [
+                {'nickname': p.nickname, 'answer': p.answer}
+                for p in room.players
+            ],
+            'host_sid': room.host_sid,
+            'duration': room.timers['discussion']
+        }, room=room_code)
+
+@socketio.on('start_voting')
+def handle_start_voting(data):
+    room_code = data['room_code']
+    room = game_manager.get_room(room_code)
+    if not room:
+        return
+
+    # Optionally set room.phase = 'voting'
+    socketio.emit('voting_phase_started', {
+        'answers': [
+            {'nickname': p.nickname, 'answer': p.answer}
+            for p in room.players
+        ],
+        'duration': room.timers['voting'],  # you can set this in the form
+        'host_sid': room.host_sid
+    }, room=room_code)
+
+
 
 def broadcast_player_list(room_code):
     room = game_manager.get_room(room_code)
