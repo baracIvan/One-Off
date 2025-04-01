@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Off</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lobster&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <h1>One Off</h1>
+    <button class="button" onclick="location.href='/create_room_form'">Create New Room</button>
+    <button class="button" onclick="showPopup()">Join Room</button>
+
+    <div id="overlay"></div>
+    <div class="popup" id="joinPopup">
+        <button class="close-btn" onclick="hidePopup()">&times;</button>
+        <form method="POST" action="/join_room" onsubmit="combineRoomCode()">
+            <label for="nickname">Nickname:</label><br>
+            <input type="text" name="nickname" required><br><br>
+            <label>Room Code:</label>
+            <div class="code-input">
+                <input type="text" maxlength="1" pattern="[A-Z0-9]" required>
+                <input type="text" maxlength="1" pattern="[A-Z0-9]" required>
+                <input type="text" maxlength="1" pattern="[A-Z0-9]" required>
+                <input type="text" maxlength="1" pattern="[A-Z0-9]" required>
+                <input type="text" maxlength="1" pattern="[A-Z0-9]" required>
+            </div>
+            <input type="hidden" name="room_code_full" id="room_code_full">
+            <br>
+            <button class="button" type="submit">Join</button>
+        </form>
+    </div>
+
+    <script>
+        function showPopup() {
+            document.getElementById('joinPopup').style.display = 'block';
+            document.getElementById('overlay').style.display = 'block';
+            document.querySelector('.code-input input').focus();
+        }
+
+        function hidePopup() {
+            document.getElementById('joinPopup').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+        }
+
+        function combineRoomCode() {
+            const inputs = document.querySelectorAll('.code-input input');
+            const code = Array.from(inputs).map(input => input.value.toUpperCase()).join('');
+            document.getElementById('room_code_full').value = code;
+        }
+
+        document.querySelectorAll('.code-input input').forEach((input, idx, arr) => {
+            input.addEventListener('input', () => {
+                if (input.value && idx < arr.length - 1) {
+                    arr[idx + 1].focus();
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !input.value && idx > 0) {
+                    arr[idx - 1].focus();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

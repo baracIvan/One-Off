@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+env/
+*.env
+
+# OS files
+.DS_Store
+
+# Flask or socketio instance (optional)
+instance/
+*.db
+
+# VS Code / PyCharm
+.vscode/
+.idea/
